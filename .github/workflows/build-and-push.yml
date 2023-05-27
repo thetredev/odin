@@ -1,0 +1,48 @@
+name: Build and push
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  DOCKER_BUILDKIT: 1
+  REGISTRY_IMAGE: "${{ github.repository_owner }}/${{ github.event.repository.name }}"
+  GHCR_PREFIX: "ghcr.io"
+  DOCKER_HUB_PREFIX: "docker.io"
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_ACCESS }}
+
+      - name: Build amd64 image
+        run: |
+          llvm_version=$(grep 'ARG LLVM_VERSION=' image/Dockerfile | cut -d '=' -f 2)
+          odin_version=$(grep 'ARG ODIN_VERSION=' image/Dockerfile | cut -d '=' -f 2)
+
+          image_tag="odin-amd64-${odin_version}-llvm-${llvm_version}"
+          docker manifest inspect ${GHCR_PREFIX}/${REGISTRY_IMAGE}:${image_tag} && exit 0
+
+          docker build --cache-from ${GHCR_PREFIX}/${REGISTRY_IMAGE}:${image_tag} -t ${GHCR_PREFIX}/${REGISTRY_IMAGE}:${image_tag} image
+          docker push ${GHCR_PREFIX}/${REGISTRY_IMAGE}:${image_tag}
+
+          docker tag ${GHCR_PREFIX}/${REGISTRY_IMAGE}:${image_tag} ${DOCKER_HUB_PREFIX}/${REGISTRY_IMAGE}:${image_tag}
+          docker push ${DOCKER_HUB_PREFIX}/${REGISTRY_IMAGE}:${image_tag}
